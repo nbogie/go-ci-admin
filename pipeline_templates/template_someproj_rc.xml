@@ -1,0 +1,88 @@
+<pipeline name="REPLACE_TITLE">
+  <trackingtool link="http://our.tracking.tool/user_stories/${ID}" regex="story-(\d+)" />
+  <materials>
+    <git url="REPLACE_GIT_URL" branch="REPLACE_GIT_BRANCH" />
+  </materials>
+  <stage name="Spec">
+    <jobs>
+      <job name="Spec">
+        <tasks>
+          <exec command="ci/build.sh" />
+        </tasks>
+        <tabs>
+          <tab name="platform" path="artifacts/platform.txt" />
+          <tab name="Coverage" path="artifacts/coverage/index.html" />
+        </tabs>
+        <artifacts>
+          <artifact src="build_artefacts/**/*" dest="artifacts" />
+        </artifacts>
+      </job>
+    </jobs>
+  </stage>
+  <stage name="DeployToStaging">
+    <approval type="manual" />
+    <jobs>
+      <job name="BundleInstall">
+        <tasks>
+          <exec command="bundle" args="install --without=usingsavedoptiondamnyou path=.gem" />
+        </tasks>
+      </job>
+      <job name="DeployToStaging">
+        <environmentvariables>
+          <variable name="SSH_AUTH_SOCK">/var/go/sshagent_pt_git</variable>
+        </environmentvariables>
+        <tasks>
+          <exec command="bash" args="-x -c 'bundle exec cap staging deploy:from_branch -s branch=${GO_REVISION}'" />
+        </tasks>
+      </job>
+    </jobs>
+  </stage>
+  <stage name="PrepareReleaseInGit">
+    <approval type="manual" />
+    <jobs>
+      <job name="MergeToMasterAndTag">
+        <environmentvariables>
+          <variable name="GIT_REPO_URL">REPLACE_GIT_URL</variable>
+        </environmentvariables>
+        <tasks>
+          <exec command="prepare_release_from_rc.sh" args="REPLACE_GIT_BRANCH" />
+        </tasks>
+        <artifacts>
+          <artifact src="tag_name.txt" dest="tags" />
+        </artifacts>
+      </job>
+    </jobs>
+  </stage>
+  <stage name="DeployNewTagToProduction">
+    <approval type="manual" />
+    <jobs>
+      <job name="BundleInstall">
+        <tasks>
+          <exec command="bundle" args="install --without=usingsavedoptiondamnyou path=.gem" />
+        </tasks>
+      </job>
+      <job name="DeployToProduction">
+        <environmentvariables>
+          <variable name="SSH_AUTH_SOCK">/var/go/sshagent_pt_git</variable>
+        </environmentvariables>
+        <tasks>
+          <fetchartifact stage="PrepareReleaseInGit" job="MergeToMasterAndTag" srcfile="tags/tag_name.txt" dest="inputs" />
+          <exec command="bash" args="-x -c 'tag_name=`cat inputs/tag_name.txt`; bundle exec cap production deploy:from_branch -s branch=${tag_name}'" />
+        </tasks>
+      </job>
+    </jobs>
+  </stage>
+  <stage name="TidyTheRC">
+    <approval type="manual" />
+    <jobs>
+      <job name="MergeToDevelopAndDelete">
+        <environmentvariables>
+          <variable name="GIT_REPO_URL">REPLACE_GIT_URL</variable>
+        </environmentvariables>
+        <tasks>
+          <exec command="bash" args="-x -c 'merge_rc_into_develop_and_delete.sh ${GO_REVISION} REPLACE_GIT_BRANCH'" />
+        </tasks>
+      </job>
+    </jobs>
+  </stage>
+</pipeline>
